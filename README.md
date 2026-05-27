@@ -32,9 +32,6 @@ helm upgrade --install k10 kasten/k10 \
 -f overlays/values-multicluster.yaml
 
 
-
-
-
 ⚠️ Important Notes
 Do NOT mix insecureCA: true and cacertconfigmap
 insecureCA: true
@@ -79,3 +76,5 @@ Validate all YAML with Helm before committing
 Internal / customer-facing use. Customize as needed.
 
 
+=======
+# kasten-helm-templates
