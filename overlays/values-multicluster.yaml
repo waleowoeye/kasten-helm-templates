@@ -1,0 +1,16 @@
+route:
+  enabled: true
+
+auth:
+  tokenAuth:
+    enabled: true
+
+# Choose ONE: trusted CA OR insecure
+# cacertconfigmap:
+#   name: custom-ca-bundle
+
+# OR
+# auth:
+#   openshift:
+#     insecureCA: true
+

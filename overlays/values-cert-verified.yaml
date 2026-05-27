@@ -1,0 +1,15 @@
+# CERTIFICATE VERIFICATION
+# extract CA
+
+#oc get secret router-ca -n openshift-ingress-operator -o jsonpath='{.data.tls\.crt}' | base64 -d > custom-ca.pem 
+
+# create configmap 
+#kubectl -n kasten-io create configmap custom-ca-bundle --from-file=custom-ca.pem 
+
+auth:
+  tokenAuth:
+    enabled: true
+
+cacertconfigmap:
+  name: custom-ca-bundle
+

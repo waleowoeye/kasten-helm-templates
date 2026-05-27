@@ -1,0 +1,34 @@
+auth:
+  tokenAuth:
+    enabled: true
+
+features:
+  fileRecoverySessionCR: true
+  vmBasedSelection: true
+
+global:
+  urlScheme: https
+
+prometheus:
+  enabled: true
+  server:
+    enabled: true
+    containerSecurityContext:
+      runAsUser: 1000780000
+    podSecurityContext:
+      fsGroup: 1000780000
+      runAsUser: 1000780000
+    persistentVolume:
+      enabled: true
+      size: 8Gi
+
+extraVolumes:
+  - name: runtime-writable
+    emptyDir: {}
+
+extraVolumeMounts:
+  - name: runtime-writable
+    mountPath: /var
+  - name: runtime-writable
+    mountPath: /tmp
+

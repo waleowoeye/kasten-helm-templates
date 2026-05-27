@@ -1,0 +1,20 @@
+route:
+  enabled: false
+
+gateway:
+  service:
+    type: ClusterIP
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: k10.example.com
+      paths:
+        - path: /k10/
+          pathType: Prefix
+  tls:
+    - hosts:
+        - k10.example.com
+      secretName: k10-tls
+

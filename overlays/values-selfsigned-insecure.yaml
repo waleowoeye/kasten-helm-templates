@@ -1,0 +1,6 @@
+auth:
+  tokenAuth:
+    enabled: true
+  openshift:
+    insecureCA: true
+

@@ -1,0 +1,17 @@
+#INSTALL HTTPD-TOOLS FOR HTPASSWD
+#sudo dnf install -y httpd-tools
+#sudo dnf install -y httpd-tools 
+#sudo apt update 
+#sudo apt install -y apache2-utils  
+
+#USE HTPASSWD
+#htpasswd –V 
+#htpasswd -nb admin <password> 
+
+auth:
+  tokenAuth:
+    enabled: false
+  basicAuth:
+    enabled: true
+    htpasswd: "admin:$apr...GKH."
+

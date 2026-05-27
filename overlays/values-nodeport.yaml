@@ -1,0 +1,10 @@
+route:
+  enabled: false
+
+ingress:
+  enabled: false
+
+gateway:
+  service:
+    type: NodePort
+
