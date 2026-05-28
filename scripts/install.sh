@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ----------------------------------------
 # Usage:
-#   ./scripts/install.sh <overlay-yaml> [storageClass] [namespace]
+#   ./scripts/install.sh [--dry-run] <overlay-yaml> [storageClass] [namespace]
+#
 # Examples:
 #   ./scripts/install.sh values-multicluster.yaml
+#   ./scripts/install.sh --dry-run values-multicluster.yaml
 #   ./scripts/install.sh values-multicluster.yaml gp3
+# ----------------------------------------
+
+# Detect dry-run flag
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=true
+  shift
+fi
 
 ENV_OVERLAY=${1:-values-multicluster.yaml}
 STORAGE_CLASS=${2:-""}
@@ -29,6 +40,9 @@ info(){ echo "[INFO] $*"; }
 warn(){ echo "[WARN] $*"; }
 err(){  echo "[ERROR] $*"; }
 
+# ----------------------------------------
+# Collect cluster baseline
+# ----------------------------------------
 collect_basics() {
   {
     echo "# context"; ${K} config current-context 2>&1 || true; echo
@@ -37,52 +51,67 @@ collect_basics() {
     echo "# storageclasses"; ${K} get sc 2>&1 || true; echo
     echo "# csidrivers"; ${K} get csidriver -o yaml 2>&1 || true; echo
     echo "# volumesnapshotclass"; ${K} get volumesnapshotclass -o yaml 2>&1 || true; echo
-    echo "# namespace pods/svc (if exists)"; ${K} get pods -n "${NS}" -o wide 2>&1 || true; ${K} get svc -n "${NS}" 2>&1 || true; echo
+    echo "# namespace pods/svc"; ${K} get pods -n "${NS}" -o wide 2>&1 || true; ${K} get svc -n "${NS}" 2>&1 || true; echo
   } > "${SNAPSHOT}" 2>&1 || true
 }
 
+# ----------------------------------------
+# Collect failed events (your key requirement)
+# ----------------------------------------
 collect_failed_events() {
-  # Requested data collection
-  ${K} get events -n "${NS}" --sort-by='.metadata.creationTimestamp' 2>&1 | grep -i failed > "${EVENTS_FAILED}" || true
+  ${K} get events -n "${NS}" \
+    --sort-by='.metadata.creationTimestamp' 2>&1 | \
+    grep -i failed > "${EVENTS_FAILED}" || true
 }
 
+# ----------------------------------------
+# Support bundle
+# ----------------------------------------
 collect_support_bundle() {
-  # Official Kasten support bundle generator
   ./scripts/collect-support.sh "${NS}" "${OUTDIR}" "${TS}" >/dev/null 2>&1 || true
 }
 
+# ----------------------------------------
+# Generate next steps (high signal)
+# ----------------------------------------
 write_next_steps() {
   : > "${NEXT_STEPS}"
 
-  # Minimal, high-signal heuristics based on primer output patterns.
   if grep -qi "Unable to find jq" "${PRE_LOG}"; then
-    echo "NEXT: install jq on the machine running preflight (primer requires it)." >> "${NEXT_STEPS}"
+    echo "NEXT: install jq (required by k10_primer.sh)" >> "${NEXT_STEPS}"
   fi
 
-  if grep -qi "Kasten Helm repo.*not.*found" "${PRE_LOG}"; then
+  if grep -qi "Helm repo.*not.*found" "${PRE_LOG}"; then
     echo "NEXT: helm repo add kasten https://charts.kasten.io && helm repo update" >> "${NEXT_STEPS}"
   fi
 
   if grep -qi "Preflight checks failed" "${PRE_LOG}"; then
-    echo "NEXT: primer failed. Review ${PRE_LOG} and attach ${OUTDIR}/support-${TS}.tar.gz (if created) for troubleshooting." >> "${NEXT_STEPS}"
+    echo "NEXT: review primer.log and collected artifacts for root cause" >> "${NEXT_STEPS}"
   fi
 
   if grep -qi "Not a supported CSI driver" "${PRE_LOG}"; then
-    echo "NEXT: CSI snapshot checker indicates driver issue. Confirm VolumeSnapshotClass and annotate the correct VSC: kubectl annotate volumesnapshotclass <VSC> k10.kasten.io/is-snapshot-class=true" >> "${NEXT_STEPS}"
-    echo "NEXT: rerun primer with explicit storage class: k10_primer.sh | bash /dev/stdin csi -s <STORAGE_CLASS>" >> "${NEXT_STEPS}"
+    cat >> "${NEXT_STEPS}" <<EOF
+NEXT: CSI issue detected:
+  - Verify VolumeSnapshotClass
+  - Annotate correct class:
+    kubectl annotate volumesnapshotclass <VSC> k10.kasten.io/is-snapshot-class=true
+  - Re-run preflight with:
+    k10_primer.sh | bash /dev/stdin csi -s <STORAGE_CLASS>
+EOF
   fi
 
-  # fsGroupPolicy is a strong signal for ownership/permission behavior
   if ${K} get csidriver -o yaml 2>/dev/null | grep -q "fsGroupPolicy: None"; then
-    echo "NEXT: CSI driver reports fsGroupPolicy: None (ownership will not be adjusted). Expect permission issues; consider runAsUser/fsGroup tuning or driver configuration." >> "${NEXT_STEPS}"
+    echo "NEXT: fsGroupPolicy=None → expect permission issues; consider fsGroup/runAsUser tuning" >> "${NEXT_STEPS}"
   fi
 
-  # If no next steps were detected
   if [[ ! -s "${NEXT_STEPS}" ]]; then
-    echo "NEXT: no known failure signature detected. Review ${PRE_LOG} and collected artifacts in ${LOGDIR}." >> "${NEXT_STEPS}"
+    echo "NEXT: no known issue signature. Inspect logs in ${LOGDIR}" >> "${NEXT_STEPS}"
   fi
 }
 
+# ----------------------------------------
+# Run Kasten preflight
+# ----------------------------------------
 run_kasten_primer() {
   PRIMER_URL="https://docs.kasten.io/downloads/8.5.9/tools/k10_primer.sh"
 
@@ -99,29 +128,47 @@ run_kasten_primer() {
   return ${RC}
 }
 
+# ----------------------------------------
+# Main
+# ----------------------------------------
 main() {
   helm repo add kasten https://charts.kasten.io/ 2>/dev/null || true
   helm repo update >/dev/null
 
-  info "Running Kasten preflight (k10_primer.sh)" 
+  info "Running Kasten preflight"
+
   if ! run_kasten_primer; then
     err "Preflight FAILED. Collecting troubleshooting data..."
+
     collect_basics
     collect_failed_events
     collect_support_bundle
     write_next_steps
 
-    err "Preflight artifacts:"
+    echo ""
+    echo "========== NEXT STEPS =========="
+    cat "${NEXT_STEPS}"
+    echo "================================"
+    echo ""
+
+    err "Artifacts:"
     err "  - ${PRE_LOG}"
     err "  - ${SNAPSHOT}"
     err "  - ${EVENTS_FAILED}"
     err "  - ${NEXT_STEPS}"
-    err "(Optional) ${OUTDIR}/support-${TS}.tar.gz"
+    err "  - ${OUTDIR}/support-${TS}.tar.gz (if created)"
 
-    exit 1
+    exit 2
   fi
 
-  info "Preflight PASSED. Proceeding with install."
+  info "Preflight PASSED"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    info "Dry-run mode enabled → skipping install"
+    exit 0
+  fi
+
+  info "Installing Kasten"
 
   helm install k10 kasten/k10 \
     -f base-values.yaml \
@@ -129,8 +176,7 @@ main() {
     -n "${NS}" \
     --create-namespace
 
-  info "Install complete. Preflight log: ${PRE_LOG}"
+  info "Install complete"
 }
 
 main "$@"
-
