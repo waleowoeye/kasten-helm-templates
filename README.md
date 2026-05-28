@@ -6,6 +6,10 @@
 #   ./scripts/install.sh --dry-run values-multicluster.yaml
 #   ./scripts/install.sh values-multicluster.yaml gp3
 
+helm install k10 kasten/k10 -f base-values.yaml \ 
+  --namespace kasten-io \ 
+  --create-namespace
+
 
 helm upgrade --install k10 kasten/k10 \
   -f base-values.yaml \
