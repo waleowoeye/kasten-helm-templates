@@ -1,10 +1,10 @@
-# Usage:
+**# Usage:
 #   ./scripts/install.sh [--dry-run] <overlay-yaml> [storageClass] [namespace]
 #
 # Examples:
 #   ./scripts/install.sh values-multicluster.yaml
 #   ./scripts/install.sh --dry-run values-multicluster.yaml
-#   ./scripts/install.sh values-multicluster.yaml gp3
+#   ./scripts/install.sh values-multicluster.yaml gp3**
 
 helm install k10 kasten/k10 -f base-values.yaml \ 
   --namespace kasten-io \ 
@@ -21,29 +21,24 @@ helm upgrade --install k10 kasten/k10 \
 -f base-values.yaml \
 -f overlays/values-auth-token.yaml
 
-
 #SCENARIO: OpenShift + Self-Signed (POC)
 -f base-values.yaml \
 -f overlays/values-selfsigned-insecure.yaml
-
 
 #SCENARIO: RKE2 + Ingress + Token
 -f base-values.yaml \
 -f overlays/values-auth-token.yaml \ 
 -f overlays/values-ingress.yaml
 
-
 #SCENARIO: Bare Metal + NodePort + Basic Auth
 -f base-values.yaml \
 -f overlays/values-auth-basic.yaml \ 
 -f overlays/values-nodeport.yaml 
 
-
 #SCENARIO: Multi-Cluster (Recommended)
 -f base-values.yaml \
 -f overlays/values-auth-token.yaml \
 -f overlays/values-multicluster.yaml
-
 
 ⚠️ Important Notes
 Do NOT mix insecureCA: true and cacertconfigmap
@@ -56,7 +51,6 @@ Always use /k10/ path for ingress/route
 
 Use stable DNS for multi-cluster setups
 
-
 ✅ Best Practices
 Keep base-values.yaml stable
 base-values.yaml
@@ -67,8 +61,6 @@ Avoid heavy use of --set
 
 Version control all YAML files
 Re-bootstrap secondaries after cert/DNS changes
-
-
 
 📁 REPOSITORY STRUCTURE
 .
