@@ -100,7 +100,6 @@ This structure enables:
 
 
 🤝 Contributing
-
 Add new overlays for additional environments
 Keep configs minimal and composable
 Validate all YAML with Helm before committing
@@ -108,7 +107,6 @@ Validate all YAML with Helm before committing
 
 📄 License
 Internal / customer-facing use. Customize as needed.
-
 
 =======
 # kasten-helm-templates
