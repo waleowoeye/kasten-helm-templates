@@ -13,14 +13,10 @@ prometheus:
   enabled: true
   server:
     enabled: true
-    containerSecurityContext:
-      runAsUser: 1000780000
-    podSecurityContext:
-      fsGroup: 1000780000
-      runAsUser: 1000780000
     persistentVolume:
       enabled: true
       size: 8Gi
+      storageClass: {{storageClass}}
 
 extraVolumes:
   - name: runtime-writable

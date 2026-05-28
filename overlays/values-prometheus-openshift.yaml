@@ -1,0 +1,7 @@
+prometheus:
+  server:
+    containerSecurityContext:
+      runAsUser: 1000780000
+    podSecurityContext:
+      fsGroup: 1000780000
+      runAsUser: 1000780000
