@@ -2,11 +2,10 @@
 set -euo pipefail
 
 # Usage:
-#   ./scripts/install.sh <overlay-yaml> [storageClass] [k10-namespace]
+#   ./scripts/install.sh <overlay-yaml> [storageClass] [namespace]
 # Examples:
 #   ./scripts/install.sh values-multicluster.yaml
 #   ./scripts/install.sh values-multicluster.yaml gp3
-#   ./scripts/install.sh values-multicluster.yaml ocs-storagecluster-ceph-rbd kasten-io
 
 ENV_OVERLAY=${1:-values-multicluster.yaml}
 STORAGE_CLASS=${2:-""}
@@ -17,56 +16,78 @@ TS="$(date +%Y%m%d-%H%M%S)"
 LOGDIR="${OUTDIR}/install-${TS}"
 mkdir -p "${LOGDIR}"
 
-PRE_LOG="${LOGDIR}/preflight.log"
-PRE_RC_FILE="${LOGDIR}/preflight.rc"
+PRE_LOG="${LOGDIR}/primer.log"
+NEXT_STEPS="${LOGDIR}/next-steps.txt"
 EVENTS_FAILED="${LOGDIR}/events_failed.txt"
-BASIC_SNAPSHOT="${LOGDIR}/cluster_snapshot.txt"
-K10_DEBUG_TGZ="${LOGDIR}/k10_debug_logs.tar.gz"
+SNAPSHOT="${LOGDIR}/cluster_snapshot.txt"
 
-# Prefer oc if present, else kubectl
+# Prefer oc if present (OpenShift), else kubectl
 K=kubectl
-if command -v oc >/dev/null 2>&1; then
-  K=oc
-fi
+command -v oc >/dev/null 2>&1 && K=oc
 
 info(){ echo "[INFO] $*"; }
 warn(){ echo "[WARN] $*"; }
-err(){ echo "[ERROR] $*"; }
+err(){  echo "[ERROR] $*"; }
 
-collect_troubleshooting() {
-  warn "Collecting troubleshooting artifacts into ${LOGDIR}"
-
-  # 1) Your requested data: failed events in kasten namespace
-  # Note: this is explicitly referenced in your internal bookmarks for troubleshooting.
-  ${K} get events -n "${NS}" --sort-by='.metadata.creationTimestamp' 2>&1 \
-    | grep -i failed > "${EVENTS_FAILED}" || true
-
-  # 2) Helpful cluster snapshots (read-only)
+collect_basics() {
   {
     echo "# context"; ${K} config current-context 2>&1 || true; echo
+    echo "# versions"; ${K} version --short 2>&1 || true; helm version 2>&1 || true; echo
     echo "# nodes"; ${K} get nodes -o wide 2>&1 || true; echo
     echo "# storageclasses"; ${K} get sc 2>&1 || true; echo
-    echo "# csidrivers"; ${K} get csidriver 2>&1 || true; echo
-    echo "# volumesnapshotclasses"; ${K} get volumesnapshotclass 2>&1 || true; echo
-    echo "# pods (namespace)"; ${K} get pods -n "${NS}" -o wide 2>&1 || true; echo
-    echo "# svc (namespace)"; ${K} get svc -n "${NS}" 2>&1 || true; echo
-  } > "${BASIC_SNAPSHOT}"
-
-  # 3) Official Kasten support bundle (recommended by docs)
-  # Produces a tar.gz bundle with service logs; good for SRs.
-  curl -s https://docs.kasten.io/downloads/8.5.9/tools/k10_debug.sh \
-    | bash -s -- -n "${NS}" -o "${K10_DEBUG_TGZ}" || true
+    echo "# csidrivers"; ${K} get csidriver -o yaml 2>&1 || true; echo
+    echo "# volumesnapshotclass"; ${K} get volumesnapshotclass -o yaml 2>&1 || true; echo
+    echo "# namespace pods/svc (if exists)"; ${K} get pods -n "${NS}" -o wide 2>&1 || true; ${K} get svc -n "${NS}" 2>&1 || true; echo
+  } > "${SNAPSHOT}" 2>&1 || true
 }
 
-run_preflight() {
-  info "Running Kasten official preflight (k10_primer.sh) …"
-  # Install requirements doc recommends running pre-flight checks with k10_primer.sh.
-  # You can pin version or update to match your desired K10 release.
+collect_failed_events() {
+  # Requested data collection
+  ${K} get events -n "${NS}" --sort-by='.metadata.creationTimestamp' 2>&1 | grep -i failed > "${EVENTS_FAILED}" || true
+}
+
+collect_support_bundle() {
+  # Official Kasten support bundle generator
+  ./scripts/collect-support.sh "${NS}" "${OUTDIR}" "${TS}" >/dev/null 2>&1 || true
+}
+
+write_next_steps() {
+  : > "${NEXT_STEPS}"
+
+  # Minimal, high-signal heuristics based on primer output patterns.
+  if grep -qi "Unable to find jq" "${PRE_LOG}"; then
+    echo "NEXT: install jq on the machine running preflight (primer requires it)." >> "${NEXT_STEPS}"
+  fi
+
+  if grep -qi "Kasten Helm repo.*not.*found" "${PRE_LOG}"; then
+    echo "NEXT: helm repo add kasten https://charts.kasten.io && helm repo update" >> "${NEXT_STEPS}"
+  fi
+
+  if grep -qi "Preflight checks failed" "${PRE_LOG}"; then
+    echo "NEXT: primer failed. Review ${PRE_LOG} and attach ${OUTDIR}/support-${TS}.tar.gz (if created) for troubleshooting." >> "${NEXT_STEPS}"
+  fi
+
+  if grep -qi "Not a supported CSI driver" "${PRE_LOG}"; then
+    echo "NEXT: CSI snapshot checker indicates driver issue. Confirm VolumeSnapshotClass and annotate the correct VSC: kubectl annotate volumesnapshotclass <VSC> k10.kasten.io/is-snapshot-class=true" >> "${NEXT_STEPS}"
+    echo "NEXT: rerun primer with explicit storage class: k10_primer.sh | bash /dev/stdin csi -s <STORAGE_CLASS>" >> "${NEXT_STEPS}"
+  fi
+
+  # fsGroupPolicy is a strong signal for ownership/permission behavior
+  if ${K} get csidriver -o yaml 2>/dev/null | grep -q "fsGroupPolicy: None"; then
+    echo "NEXT: CSI driver reports fsGroupPolicy: None (ownership will not be adjusted). Expect permission issues; consider runAsUser/fsGroup tuning or driver configuration." >> "${NEXT_STEPS}"
+  fi
+
+  # If no next steps were detected
+  if [[ ! -s "${NEXT_STEPS}" ]]; then
+    echo "NEXT: no known failure signature detected. Review ${PRE_LOG} and collected artifacts in ${LOGDIR}." >> "${NEXT_STEPS}"
+  fi
+}
+
+run_kasten_primer() {
   PRIMER_URL="https://docs.kasten.io/downloads/8.5.9/tools/k10_primer.sh"
 
   set +e
   if [[ -n "${STORAGE_CLASS}" ]]; then
-    # CSI checker mode used in PoC templates: primer + csi -s <storageClass>
     curl -s "${PRIMER_URL}" | bash /dev/stdin csi -s "${STORAGE_CLASS}" 2>&1 | tee "${PRE_LOG}"
     RC=${PIPESTATUS[2]}
   else
@@ -75,38 +96,41 @@ run_preflight() {
   fi
   set -e
 
-  echo "${RC}" > "${PRE_RC_FILE}"
-  return "${RC}"
+  return ${RC}
 }
 
 main() {
-  # 0) ensure helm repo is present (idempotent)
   helm repo add kasten https://charts.kasten.io/ 2>/dev/null || true
   helm repo update >/dev/null
 
-  # 1) preflight gate
-  if ! run_preflight; then
-    err "Preflight FAILED (rc=$(cat "${PRE_RC_FILE}"))."
-    collect_troubleshooting
-    err "Artifacts collected in: ${LOGDIR}"
-    err "Key files:"
+  info "Running Kasten preflight (k10_primer.sh)" 
+  if ! run_kasten_primer; then
+    err "Preflight FAILED. Collecting troubleshooting data..."
+    collect_basics
+    collect_failed_events
+    collect_support_bundle
+    write_next_steps
+
+    err "Preflight artifacts:"
     err "  - ${PRE_LOG}"
+    err "  - ${SNAPSHOT}"
     err "  - ${EVENTS_FAILED}"
-    err "  - ${K10_DEBUG_TGZ} (if generated)"
+    err "  - ${NEXT_STEPS}"
+    err "(Optional) ${OUTDIR}/support-${TS}.tar.gz"
+
     exit 1
   fi
 
   info "Preflight PASSED. Proceeding with install."
 
-  # 2) install (only for first-time; upgrades are handled separately)
   helm install k10 kasten/k10 \
     -f base-values.yaml \
     -f "overlays/${ENV_OVERLAY}" \
     -n "${NS}" \
     --create-namespace
 
-  info "Install complete."
-  info "Artifacts (preflight log) saved in: ${LOGDIR}"
+  info "Install complete. Preflight log: ${PRE_LOG}"
 }
 
 main "$@"
+
