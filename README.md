@@ -90,7 +90,6 @@ Re-bootstrap secondaries after cert/DNS changes
     ├── preflight.sh
     └─   ─ upgrade.sh
 
-
 📌 Summary
 This structure enables:
 - Consistent deployments
