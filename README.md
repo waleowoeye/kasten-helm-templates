@@ -68,22 +68,23 @@ Re-bootstrap secondaries after cert/DNS changes
 
 📁 REPOSITORY STRUCTURE
 .
+├── README.md
 ├── base-values.yaml
-├── overlays/
-│   ├── values-auth-token.yaml
+├── overlays
 │   ├── values-auth-basic.yaml
-│   ├── values-selfsigned-insecure.yaml
+│   ├── values-auth-token.yaml
 │   ├── values-cert-verified.yaml
-│   ├── values-nodeport.yaml
 │   ├── values-ingress.yaml
 │   ├── values-multicluster.yaml
-├── scripts/
-│   ├── install.sh
-│   ├── upgrade.sh
-│   ├── preflight.sh
-│   └── collect-support.sh
-└── README.md
-
+│   ├── values-nodeport.yaml
+│   ├── values-prometheus-generic.yaml
+│   ├── values-prometheus-openshift.yaml
+│   └── values-selfsigned-insecure.yaml
+└── scripts
+    ├── collect-support.sh
+    ├── install.sh
+    ├── preflight.sh
+    └─   ─ upgrade.sh
 
 
 📌 Summary
