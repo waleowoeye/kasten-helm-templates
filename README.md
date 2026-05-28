@@ -1,7 +1,9 @@
 # Usage:
-#   ./scripts/install.sh <overlay-yaml> [storageClass] [namespace]
+#   ./scripts/install.sh [--dry-run] <overlay-yaml> [storageClass] [namespace]
+#
 # Examples:
 #   ./scripts/install.sh values-multicluster.yaml
+#   ./scripts/install.sh --dry-run values-multicluster.yaml
 #   ./scripts/install.sh values-multicluster.yaml gp3
 
 
