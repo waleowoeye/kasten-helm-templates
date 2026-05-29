@@ -4,7 +4,7 @@ Reusable Helm deployment templates for Veeam Kasten K10 across OpenShift, RKE2, 
 
 ---
 
-## 🚀 Usage
+## 🚀 Install Pattern
 
 ```bash
 ./scripts/install.sh [--dry-run] <overlay-yaml> [storageClass] [namespace]
@@ -20,7 +20,7 @@ Reusable Helm deployment templates for Veeam Kasten K10 across OpenShift, RKE2, 
 
 ---
 
-## 🔧 Helm Deployment Pattern
+## 🔧 Helm Upgrade Pattern
 
 ```bash
 helm upgrade --install k10 kasten/k10 \
